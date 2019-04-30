@@ -65,7 +65,7 @@ _FRIDA_SCRIPT = """
         ["SSL_read", "SSL_write", "SSL_get_fd", "SSL_get_session",
         "SSL_SESSION_get_id"]],
       [Process.platform == "darwin" ? "*libsystem*" : "*libc*",
-        ["getpeername", "getsockname", "ntohs", "ntohl"]]
+        ["getpeername", "getsockname"]]
       ];
     for (var i = 0; i < exps.length; i++)
     {
@@ -123,8 +123,6 @@ _FRIDA_SCRIPT = """
       "pointer", "pointer"]);
     getsockname = new NativeFunction(addresses["getsockname"], "int", ["int",
       "pointer", "pointer"]);
-    ntohs = new NativeFunction(addresses["ntohs"], "uint16", ["uint16"]);
-    ntohl = new NativeFunction(addresses["ntohl"], "uint32", ["uint32"]);
   }
   initializeGlobals();
 
@@ -156,8 +154,8 @@ _FRIDA_SCRIPT = """
       {
         getpeername(sockfd, addr, addrlen);
       }
-      message[src_dst[i] + "_port"] = ntohs(Memory.readU16(addr.add(2)));
-      message[src_dst[i] + "_addr"] = ntohl(Memory.readU32(addr.add(4)));
+      message[src_dst[i] + "_port"] = Memory.readU16(addr.add(2));
+      message[src_dst[i] + "_addr"] = Memory.readU32(addr.add(4));
     }
 
     return message;
@@ -236,7 +234,7 @@ _FRIDA_SCRIPT = """
 ssl_sessions = {}
 
 
-def ssl_log(process, pcap=None, verbose=False, wait=False):
+def ssl_log(process, pcap=None, verbose=False, wait=False, remote=False):
   """Decrypts and logs a process's SSL traffic.
 
   Hooks the functions SSL_read() and SSL_write() in a given process and logs
@@ -251,6 +249,7 @@ def ssl_log(process, pcap=None, verbose=False, wait=False):
     NotImplementedError: Not running on a Linux or macOS system.
   """
 
+  print "ssl_log init"
   if platform.system() not in ("Darwin", "Linux"):
     raise NotImplementedError("This function is only implemented for Linux and "
                               "macOS systems.")
@@ -335,6 +334,11 @@ def ssl_log(process, pcap=None, verbose=False, wait=False):
     if len(data) == 0:
       return
     p = message["payload"]
+    p["src_port"] = socket.ntohs(p["src_port"])
+    p["dst_port"] = socket.ntohs(p["dst_port"])
+    p["src_addr"] = socket.ntohl(p["src_addr"])
+    p["dst_addr"] = socket.ntohl(p["dst_addr"])
+
     if verbose:
       src_addr = socket.inet_ntop(socket.AF_INET,
                                   struct.pack(">I", p["src_addr"]))
@@ -353,14 +357,22 @@ def ssl_log(process, pcap=None, verbose=False, wait=False):
       log_pcap(pcap_file, p["ssl_session_id"], p["function"], p["src_addr"],
                p["src_port"], p["dst_addr"], p["dst_port"], data)
 
+  print "wait for process", process
   while wait:
     try:
-      frida.get_local_device().get_process(process)
+      if remote:
+        frida.get_remote_device().get_process(process)
+      else:
+        frida.get_local_device().get_process(process)
       break
     except frida.ProcessNotFoundError:
       time.sleep(0.1)
 
-  session = frida.attach(process)
+  print "frida attach remote:", remote
+  if remote:
+    session=frida.get_remote_device().attach(process)
+  else:
+    session = frida.attach(process)
 
   if pcap:
     pcap_file = open(pcap, "wb", 0)
@@ -411,17 +423,21 @@ Examples:
   %(prog)s -pcap ssl.pcap openssl
   %(prog)s -verbose 31337
   %(prog)s -pcap log.pcap -verbose wget
+  %(prog)s -pcap log.pcap -wait -verbose wget
+  %(prog)s -pcap log.pcap -verbose -remote com.google.chrome
 """)
 
   args = parser.add_argument_group("Arguments")
   args.add_argument("-pcap", metavar="<path>",
                     help="Name of PCAP file to write")
-  args.add_argument("-verbose", action="store_true",
-                    help="Show verbose output")
   args.add_argument("-wait", action="store_true",
                     help="Wait for the process")
   args.add_argument("-ssl", metavar="<lib>",
                     help="SSL library to hook (default: *libssl*)")
+  args.add_argument("-verbose", required=False, action="store_const",
+                    const=True, help="Show verbose output")
+  args.add_argument("-remote", required=False, action="store_const",
+                    const=True, help="Attach a remote process")
   args.add_argument("process", metavar="<process name | process id>",
                     help="Process whose SSL calls to log")
   parsed = parser.parse_args()
@@ -430,4 +446,4 @@ Examples:
     _FRIDA_SCRIPT = _FRIDA_SCRIPT.replace('*libssl*', parsed.ssl)
 
   ssl_log(int(parsed.process) if parsed.process.isdigit() else parsed.process,
-          parsed.pcap, parsed.verbose, parsed.wait)
+          parsed.pcap, parsed.verbose, parsed.wait, parsed.remote)

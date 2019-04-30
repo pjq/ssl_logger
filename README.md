@@ -6,19 +6,23 @@ The functionality offered by *ssl_logger* is intended to mimic [Echo Mirage](htt
 
 ## Basic Usage
 
-`python ssl_logger.py [-pcap <path>] [-verbose] <process name | process id>`
+`python ssl_logger.py [-pcap <path>] [-verbose] [-ssl] [-remote] <process name | process id>`
 
 Arguments:
-
-    -pcap <path>                 Name of PCAP file to write
-    -verbose                     Show verbose output
-    <process name | process id>  Process whose SSL calls to log
+  -pcap <path>          Name of PCAP file to write
+  -wait                 Wait for the process
+  -ssl <lib>            SSL library to hook (default: *libssl*)
+  -verbose              Show verbose output
+  -remote               Attach a remote process
+  <process name | process id>
+                        Process whose SSL calls to log
 
 Examples:
 
     ssl_logger.py -pcap ssl.pcap openssl
     ssl_logger.py -verbose 31337
-    ssl_logger.py -pcap log.pcap -verbose wget
+    ssl_logger.py -pcap log.pcap -wait -verbose wget
+    ssl_logger.py -pcap log.pcap -verbose -remote com.android.chrome 
 
 ## Full Example
 
@@ -166,6 +170,13 @@ Frida can be installed as follows: `sudo pip install frida`
  - Add support for processes that communicate via SSL without using [libssl](https://wiki.openssl.org/index.php/Libssl_API).
  - Allow user to run *ssl_logger* before starting the process to be logged.
 
+## Android support
+Need to do the adb forward
+```
+adb forward tcp:27042 tcp:27042
+adb forward tcp:27043 tcp:27043
+
+```
 
 ## Disclaimer
 
