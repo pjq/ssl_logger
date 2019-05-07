@@ -327,6 +327,7 @@ def ssl_log(process, pcap=None, verbose=False, wait=False, remote=False):
           dependent on message type.
       data: The string of captured decrypted data.
     """
+    print "on_message,", message
     if message["type"] == "error":
       pprint.pprint(message)
       os.kill(os.getpid(), signal.SIGTERM)
@@ -374,6 +375,7 @@ def ssl_log(process, pcap=None, verbose=False, wait=False, remote=False):
   else:
     session = frida.attach(process)
 
+  print "frida attach done: ", session 
   if pcap:
     pcap_file = open(pcap, "wb", 0)
     for writes in (
